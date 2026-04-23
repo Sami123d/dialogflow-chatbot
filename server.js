@@ -7,15 +7,47 @@ const { GoogleAuth } = require("google-auth-library");
 const PORT = process.env.PORT || 3001;
 const PROJECT_ID = process.env.DIALOGFLOW_PROJECT_ID;
 const LANGUAGE_CODE = process.env.DIALOGFLOW_LANGUAGE_CODE || "en-US";
+const SERVICE_ACCOUNT_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+const SERVICE_ACCOUNT_BASE64 = process.env.GOOGLE_SERVICE_ACCOUNT_BASE64;
 
 if (!PROJECT_ID) {
   console.error("Missing DIALOGFLOW_PROJECT_ID environment variable.");
   process.exit(1);
 }
 
-const auth = new GoogleAuth({
+function parseServiceAccountFromEnv() {
+  try {
+    if (SERVICE_ACCOUNT_JSON) {
+      return JSON.parse(SERVICE_ACCOUNT_JSON);
+    }
+
+    if (SERVICE_ACCOUNT_BASE64) {
+      const decoded = Buffer.from(SERVICE_ACCOUNT_BASE64, "base64").toString("utf8");
+      return JSON.parse(decoded);
+    }
+
+    return null;
+  } catch (error) {
+    console.error("Invalid Google service account JSON in environment variables.");
+    console.error(error);
+    process.exit(1);
+  }
+}
+
+const serviceAccountCredentials = parseServiceAccountFromEnv();
+const authOptions = {
   scopes: ["https://www.googleapis.com/auth/cloud-platform"],
-});
+};
+
+if (serviceAccountCredentials) {
+  authOptions.credentials = serviceAccountCredentials;
+}
+
+if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+  authOptions.keyFilename = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+}
+
+const auth = new GoogleAuth(authOptions);
 
 async function getAccessToken() {
   const client = await auth.getClient();
