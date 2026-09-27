@@ -88,7 +88,10 @@ export default function ChatbotUI() {
         const data = JSON.parse(event.data) as ServerMessage;
 
         if (data.type === "status") {
-          setConnectionStatus(data.text);
+          // The server greets every new connection with a status message.
+          // Keep the status at "Connected" so the send button stays enabled
+          // (it is only enabled when connectionStatus === "Connected").
+          setConnectionStatus("Connected");
           return;
         }
 
