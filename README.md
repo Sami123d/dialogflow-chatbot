@@ -2,6 +2,8 @@
 
 A real-time chat UI built with Next.js. It talks to a Dialogflow ES agent through a small Node.js WebSocket server.
 
+![CI](https://github.com/Sami123d/dialogflow-chatbot/actions/workflows/ci.yml/badge.svg)
+
 ![Chat UI connected to the local WebSocket server](docs/screenshots/chat-ui.png)
 
 ## Live demo: UI only
