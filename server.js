@@ -10,11 +10,6 @@ const LANGUAGE_CODE = process.env.DIALOGFLOW_LANGUAGE_CODE || "en-US";
 const SERVICE_ACCOUNT_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 const SERVICE_ACCOUNT_BASE64 = process.env.GOOGLE_SERVICE_ACCOUNT_BASE64;
 
-if (!PROJECT_ID) {
-  console.error("Missing DIALOGFLOW_PROJECT_ID environment variable.");
-  process.exit(1);
-}
-
 function parseServiceAccountFromEnv() {
   try {
     if (SERVICE_ACCOUNT_JSON) {
@@ -165,67 +160,73 @@ async function handleWebhookRequest(webhookRequest) {
   return response;
 }
 
-const wss = new WebSocket.Server({ server });
+/**
+ * Handles one raw WebSocket message from the browser and returns the JSON
+ * payload to send back. `detect` is injectable so it can be mocked in tests.
+ */
+async function handleClientMessage(rawMessage, sessionId, detect = detectIntent) {
+  let payload;
+  try {
+    payload = JSON.parse(rawMessage.toString());
+  } catch {
+    return { type: "error", text: "Invalid JSON payload received." };
+  }
 
-wss.on("connection", (socket) => {
-  const sessionId = `session-${Math.random().toString(36).slice(2, 10)}`;
+  if (!payload || payload.type !== "user_message" || typeof payload.text !== "string") {
+    return {
+      type: "error",
+      text: "Expected a user_message payload with a text string.",
+    };
+  }
 
-  socket.send(
-    JSON.stringify({
-      type: "status",
-      text: "Connected to Dialogflow WebSocket server.",
-      sessionId,
-    })
-  );
+  try {
+    const reply = await detect(sessionId, payload.text);
+    return { type: "bot_response", text: reply };
+  } catch (error) {
+    console.error("Dialogflow request failed:", error);
+    return {
+      type: "error",
+      text: error.message || "Dialogflow request failed.",
+    };
+  }
+}
 
-  socket.on("message", async (message) => {
-    let payload;
-    try {
-      payload = JSON.parse(message.toString());
-    } catch (error) {
-      socket.send(
-        JSON.stringify({
-          type: "error",
-          text: "Invalid JSON payload received.",
-        })
-      );
-      return;
-    }
+function start() {
+  if (!PROJECT_ID) {
+    console.error("Missing DIALOGFLOW_PROJECT_ID environment variable.");
+    process.exit(1);
+  }
 
-    if (payload.type !== "user_message" || typeof payload.text !== "string") {
-      socket.send(
-        JSON.stringify({
-          type: "error",
-          text: "Expected a user_message payload with a text string.",
-        })
-      );
-      return;
-    }
+  const wss = new WebSocket.Server({ server });
 
-    try {
-      const reply = await detectIntent(sessionId, payload.text);
-      socket.send(
-        JSON.stringify({
-          type: "bot_response",
-          text: reply,
-        })
-      );
-    } catch (error) {
-      console.error("Dialogflow request failed:", error);
-      socket.send(
-        JSON.stringify({
-          type: "error",
-          text: error.message || "Dialogflow request failed.",
-        })
-      );
-    }
+  wss.on("connection", (socket) => {
+    const sessionId = `session-${Math.random().toString(36).slice(2, 10)}`;
+
+    socket.send(
+      JSON.stringify({
+        type: "status",
+        text: "Connected to Dialogflow WebSocket server.",
+        sessionId,
+      })
+    );
+
+    socket.on("message", async (message) => {
+      const response = await handleClientMessage(message, sessionId);
+      socket.send(JSON.stringify(response));
+    });
+
+    socket.on("close", () => {
+      console.log(`WebSocket disconnected session=${sessionId}`);
+    });
   });
 
-  socket.on("close", () => {
-    console.log(`WebSocket disconnected session=${sessionId}`);
+  server.listen(PORT, () => {
+    console.log(`WebSocket server listening on ws://localhost:${PORT}`);
   });
-});
+}
 
-server.listen(PORT, () => {
-  console.log(`WebSocket server listening on ws://localhost:${PORT}`);
-});
+if (require.main === module) {
+  start();
+}
+
+module.exports = { handleClientMessage, handleWebhookRequest, server };
